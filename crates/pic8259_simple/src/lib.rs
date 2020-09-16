@@ -25,6 +25,9 @@ extern crate x86_64;
 
 use x86_64::instructions::port::Port;
 
+use core::arch::x86_64::_rdtsc;
+use core::sync::atomic::{self, Ordering};
+
 /// Command sent to begin PIC initialization.
 const CMD_INIT: u8 = 0x11;
 
@@ -107,8 +110,14 @@ impl ChainedPics {
         // worked around this by writing garbage data to port 0x80, which
         // allegedly takes long enough to make everything work on most
         // hardware.  Here, `wait` is a closure.
-        let mut wait_port: Port<u8> = Port::new(0x80);
-        let mut wait = || wait_port.write(0);
+        let wait = || {
+            // Blocks the program for *at least* 1_000_000 cycles.
+            let start = _rdtsc();
+            atomic::fence(Ordering::SeqCst);
+            while _rdtsc() - start < 1_000_000 {
+                atomic::fence(Ordering::SeqCst);
+            }
+         };
 
         // Save our original interrupt masks, because I'm too lazy to
         // figure out reasonable values.  We'll restore these when we're
